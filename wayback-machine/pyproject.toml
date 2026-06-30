@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wayback-machine"
+version = "0.0.1"
+description = "My personal wayback machine client."
+readme = "README.md"
+requires-python = ">=3.13"
+license = {text = "GPLv3"}
+authors = [
+  {name = "Esperoj", email = "esperoj@esperoj.eu.org"}
+]
+dependencies = [
+  "curl @ git+https://codefloe.com/esperoj/tools.git#subdirectory=curl"
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff",
+  "pytest",
+  "pytest-cov",
+  "pyright",
+]
+[project.scripts]
+wayback-machine = "wayback_machine.cli:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "--color=yes --exitfirst --failed-first"
+xfail_strict = true
+
+[tool.coverage.run]
+source = ["wayback_machine"]
+omit = ["*/tests/*"]
+
+[tool.ruff]
+line-length = 79
+target-version = "py313"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.*" = ["S101", "ARG001"]
+
+[tool.ruff.format]
+quote-style = "double"
