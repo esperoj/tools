@@ -4,9 +4,10 @@ import concurrent.futures
 import os
 import threading
 import time
+import urllib.parse
 from typing import Any, Callable, Iterable
 
-from curl import CurlExecutor, CurlRequest
+import curl
 
 
 class WaybackMachine:
@@ -29,7 +30,7 @@ class WaybackMachine:
         api_key: str | None = None,
         api_secret: str | None = None,
         proxy_prefix: str = "https://sjc-proxy.esperoj.workers.dev/",
-        max_workers: int = 4,
+        max_workers: int = 3,
         dry_run: bool = False,
     ):
         """Initializes the Wayback Machine client."""
@@ -55,28 +56,44 @@ class WaybackMachine:
 
     def _curl(
         self,
-        executor: CurlExecutor,
         url: str,
         method: str = "GET",
-        headers: dict = None,
+        headers: dict | None = None,
         data: Any = None,
     ) -> dict:
-        """Centralized HTTP request helper using the CurlExecutor."""
+        """Centralized HTTP request helper using the ergonomic curl API."""
         target_url = f"{self.proxy_prefix}{url}" if self.proxy_prefix else url
-        req = CurlRequest(
-            url=target_url,
+        
+        req_headers = headers.copy() if headers else {}
+        
+        # Prepare payload: SPN2 endpoints expect form-encoded data on POST requests.
+        payload = data
+        if isinstance(data, dict):
+            payload = urllib.parse.urlencode(data)
+            req_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+
+        res = curl.request(
             method=method,
-            headers=headers or {},
-            data=data,
-            timeout=120,
+            url=target_url,
+            headers=req_headers,
+            data=payload,
+            options={"max-time": 120}
         )
-        res = list(executor.execute([req]))[0]
-        if not res.ok:
-            raise RuntimeError(f"HTTP {res.status_code}: {res.error}")
+
+        status_code = res.status_code or 0
+
+        if status_code >= 400:
+            raise RuntimeError(f"HTTP {status_code}: Request failed for {target_url}\n{res.text}")
+
+        # Fallback check for missing %{json} support in older curl binaries causing status code 0.
+        if status_code == 0 and not res.content:
+            raise RuntimeError(f"HTTP 0: Request failed (empty response) for {target_url}")
 
         try:
             return res.json()
         except Exception:
+            if status_code == 0:
+                raise RuntimeError(f"HTTP 0: Invalid non-JSON response for {target_url}\n{res.text}")
             return {"raw_response": res.content}
 
     # =========================================================================
@@ -147,7 +164,6 @@ class WaybackMachine:
             time.sleep(1.5)
             return f"https://web.archive.org/web/20260101000000id_/{url}"
 
-        executor = CurlExecutor(max_workers=1)
         headers = self._get_spn2_headers()
         sleep_dynamic = max(10, self.max_workers * 2)
 
@@ -160,7 +176,6 @@ class WaybackMachine:
                 on_event(url, slot, "WAIT", "Checking account availability...")
 
             status_data = self._curl(
-                executor,
                 f"https://web.archive.org/save/status/user?_t={int(time.time())}",
                 headers=headers,
             )
@@ -172,7 +187,6 @@ class WaybackMachine:
         if on_event:
             on_event(url, slot, "SAVE", "Submitting to archive queue...")
         save_res = self._curl(
-            executor,
             "https://web.archive.org/save",
             method="POST",
             headers=headers,
@@ -196,7 +210,6 @@ class WaybackMachine:
                 )
 
             poll_data = self._curl(
-                executor,
                 f"https://web.archive.org/save/status/{job_id}",
                 headers=headers,
             )

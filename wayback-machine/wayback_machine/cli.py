@@ -182,7 +182,7 @@ def main():
     global_parser = argparse.ArgumentParser(add_help=False)
     global_parser.add_argument(
         "--proxy",
-        default="https://proxy.esperoj.workers.dev/",
+        default="https://sjc-proxy.esperoj.workers.dev/",
         help="Proxy prefix",
     )
     global_parser.add_argument(
